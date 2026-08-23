@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Akasa Air - Passenger Details</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; color: #222; }
+
+  /* ── NAVBAR (visual parity with akasaair.com) ── */
+  .navbar {
+    background: #fff; border-bottom: 1px solid #eee;
+    padding: 14px 28px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .brand { display: flex; flex-direction: column; line-height: 1.1; }
+  .brand-name { font-size: 20px; font-weight: 800; color: #5c0fd9; }
+  .brand-tag  { font-size: 9px; font-weight: 700; color: #e8630a; letter-spacing: 0.5px; }
+  .nav-links  { display: none; }
+  @media (min-width: 900px) {
+    .nav-links { display: flex; gap: 26px; font-size: 14px; color: #333; }
+  }
+
+  /* ── PAGE HEADER ── */
+  .page-header {
+    background: #fff; padding: 22px 24px 18px; border-bottom: 1px solid #eee;
+  }
+  .page-title { font-size: 24px; font-weight: 800; color: #1a1a2e; }
+  .page-subtitle { font-size: 13px; color: #888; margin-top: 4px; }
+
+  /* ── SECTOR SUMMARY STRIP ── */
+  .trip-strip {
+    background: #fff8f2; border-bottom: 1px solid #fcd6b0;
+    padding: 10px 24px; font-size: 12.5px; color: #c05000; font-weight: 600;
+    display: none;
+  }
+
+  /* ── PASSENGER LIST ── */
+  .main { max-width: 900px; margin: 0 auto; padding: 18px 20px 140px; }
+  .pax-item {
+    background: #fff8f2; border: 1.5px solid #fcd9b6; border-radius: 10px;
+    margin-bottom: 14px; overflow: hidden; transition: border-color 0.15s;
+  }
+  .pax-item.done { border-color: #22a06b; }
+  .pax-item.invalid { border-color: #d94b3d; }
+
+  .pax-item-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 16px 18px; cursor: pointer;
+  }
+  .pax-item-left { display: flex; align-items: center; gap: 12px; }
+  .pax-icon {
+    width: 38px; height: 38px; border-radius: 50%; border: 1.5px solid #e8630a;
+    display: flex; align-items: center; justify-content: center; color: #e8630a; font-size: 17px;
+    flex-shrink: 0;
+  }
+  .pax-item.done .pax-icon { border-color: #22a06b; color: #22a06b; }
+  .pax-title { font-size: 16px; font-weight: 700; color: #1a1a2e; }
+  .pax-subtitle { font-size: 12px; color: #888; margin-top: 2px; }
+
+  .pax-item-right { display: flex; align-items: center; gap: 18px; }
+  .chevron { font-size: 13px; color: #888; transition: transform 0.15s; }
+  .pax-item.expanded .chevron { transform: rotate(180deg); }
+
+  /* ── FORM BODY ── */
+  .pax-body {
+    max-height: 0; overflow: hidden; transition: max-height 0.2s ease;
+    background: #fff;
+  }
+  .pax-item.expanded .pax-body { max-height: 600px; }
+  .pax-body-inner { padding: 4px 18px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 560px) { .pax-body-inner { grid-template-columns: 1fr; } }
+
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field.full { grid-column: 1 / -1; }
+  .field label { font-size: 12px; font-weight: 700; color: #555; }
+  .field input, .field select {
+    border: 1.5px solid #ddd; border-radius: 6px; padding: 10px 12px; font-size: 14px;
+    color: #222; background: #fff; outline: none; transition: border-color 0.15s;
+  }
+  .field input:focus, .field select:focus { border-color: #e8630a; }
+  .field input.err, .field select.err { border-color: #d94b3d; }
+  .field .hint { font-size: 10.5px; color: #999; }
+
+  .gender-pick { display: flex; gap: 10px; }
+  .gender-opt {
+    flex: 1; border: 1.5px solid #ddd; border-radius: 6px; padding: 9px; text-align: center;
+    font-size: 13px; font-weight: 600; color: #555; cursor: pointer; transition: 0.15s;
+  }
+  .gender-opt.sel { border-color: #e8630a; background: #fff3ec; color: #c05000; }
+
+  /* ── BOTTOM BAR ── */
+  .bottom-bar {
+    background: #fff; border-top: 2px solid #e5e7eb;
+    padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+  }
+  .price-info { display: flex; flex-direction: column; gap: 2px; }
+  .price-total { font-size: 20px; font-weight: 800; color: #e8630a; }
+  .price-link  { font-size: 11px; color: #888; cursor: pointer; text-decoration: underline; }
+  .btn-continue {
+    border: none; padding: 13px 34px; border-radius: 6px; font-size: 15px; font-weight: 700;
+    cursor: pointer; background: #e8630a; color: #fff; transition: background 0.15s;
+  }
+  .btn-continue:hover { background: #c95500; }
+  .btn-continue:disabled { background: #f0b98a; cursor: not-allowed; }
+
+  #loading, #error-box { text-align: center; padding: 40px 24px; color: #888; font-size: 14px; }
+  #error-box { display: none; color: #333; }
+  #error-box strong { color: #d94b3d; display: block; margin-bottom: 8px; font-size: 15px; }
+</style>
+</head>
+<body>
+
+  <div class="navbar">
+    <div class="brand">
+      <div class="brand-name">Akasa Air</div>
+      <div class="brand-tag">IT'S YOUR SKY</div>
+    </div>
+    <div class="nav-links">
+      <span>Book</span><span>Manage Booking</span><span>Check-in</span><span>Add-Ons</span><span>Tariff</span>
+    </div>
+  </div>
+
+  <div class="page-header">
+    <div class="page-title">Who's travelling?</div>
+    <div class="page-subtitle">For international travel, please enter name as per passport.</div>
+  </div>
+
+  <div class="trip-strip" id="trip-strip"></div>
+
+  <div id="loading">Loading passenger form…</div>
+  <div id="error-box"></div>
+
+  <div class="main" id="main-root" style="display:none;">
+    <div id="pax-list"></div>
+  </div>
+
+  <div class="bottom-bar" id="bottom-bar" style="display:none;">
+    <div class="price-info">
+      <div class="price-total" id="price-display">₹0</div>
+      <div class="price-link" onclick="toggleSummary()">View summary</div>
+    </div>
+    <button class="btn-continue" id="continue-btn" onclick="handleContinue()">Continue</button>
+  </div>
+
+<script>
+  // ---------------------------------------------------------
+  // Query params (same pattern as the seat-selection webview)
+  // ---------------------------------------------------------
+  let baseUrl = '';
+  let authToken = '';
+  let qpApiKey = '';
+  let qpSource = 'CHATBOTWEB';
+  let customerNumber = '';
+  let tripSummary = '';
+  let totalAmount = 0;
+  let currencyCode = 'INR';
+
+  // passenger_meta: JSON-encoded array, one entry per passenger, in the
+  // exact order the backend expects them back (matches passengerKeys order
+  // from /create-trip). Each entry:
+  //   { key: "<passengerKey>", type: "ADT"|"SNR"|"CHD"|"INF", label: "Adult 1" }
+  // Falls back to building a generic list from adult/senior/child/infant
+  // counts if passenger_meta isn't supplied (useful for local testing).
+  let paxMeta = [];
+
+  function getQueryParam(name) {
+    return new URLSearchParams(window.location.search).get(name) || '';
+  }
+
+  function buildFallbackPaxMeta() {
+    const adults = parseInt(getQueryParam('adult_count') || '1', 10) || 0;
+    const seniors = parseInt(getQueryParam('senior_count') || '0', 10) || 0;
+    const children = parseInt(getQueryParam('child_count') || '0', 10) || 0;
+    const infants = parseInt(getQueryParam('infant_count') || '0', 10) || 0;
+    const meta = [];
+    for (let i = 1; i <= adults; i++) meta.push({ key: `ADT_${i}`, type: 'ADT', label: `Adult ${i}` });
+    for (let i = 1; i <= seniors; i++) meta.push({ key: `SNR_${i}`, type: 'SNR', label: `Senior Citizen ${i}` });
+    for (let i = 1; i <= children; i++) meta.push({ key: `CHD_${i}`, type: 'CHD', label: `Child ${i}` });
+    for (let i = 1; i <= infants; i++) meta.push({ key: `INF_${i}`, type: 'INF', label: `Infant ${i}` });
+    return meta;
+  }
+
+  const TYPE_LABELS = { ADT: 'Adult', SNR: 'Senior Citizen', CHD: 'Child', INF: 'Infant' };
+
+  function init() {
+    baseUrl = getQueryParam('base_url');
+    authToken = getQueryParam('auth_token');
+    qpApiKey = getQueryParam('qp_bot_api_key');
+    qpSource = getQueryParam('qp_bot_source') || 'CHATBOTWEB';
+    customerNumber = getQueryParam('customer_number');
+    tripSummary = getQueryParam('trip_summary') || '';
+    const amountStr = getQueryParam('total_amount');
+    totalAmount = amountStr ? parseFloat(amountStr) : 0;
+    currencyCode = getQueryParam('currency') || 'INR';
+
+    try {
+      const rawMeta = getQueryParam('passenger_meta');
+      paxMeta = rawMeta ? JSON.parse(rawMeta) : [];
+    } catch (e) {
+      paxMeta = [];
+    }
+    if (!Array.isArray(paxMeta) || paxMeta.length === 0) {
+      paxMeta = buildFallbackPaxMeta();
+    }
+
+    document.getElementById('loading').style.display = 'none';
+
+    if (tripSummary) {
+      const strip = document.getElementById('trip-strip');
+      strip.textContent = tripSummary;
+      strip.style.display = 'block';
+    }
+
+    renderPassengers();
+    updatePriceBar();
+
+    document.getElementById('main-root').style.display = 'block';
+    document.getElementById('bottom-bar').style.display = 'flex';
+  }
+
+  // ---------------------------------------------------------
+  // Rendering
+  // ---------------------------------------------------------
+  function renderPassengers() {
+    const list = document.getElementById('pax-list');
+    list.innerHTML = '';
+
+    paxMeta.forEach((pax, idx) => {
+      const item = document.createElement('div');
+      item.className = 'pax-item';
+      item.id = `pax-item-${idx}`;
+
+      const adultOptions = paxMeta
+        .map((p, i) => ({ ...p, i }))
+        .filter(p => p.type === 'ADT' || p.type === 'SNR');
+
+      item.innerHTML = `
+        <div class="pax-item-head" onclick="togglePax(${idx})">
+          <div class="pax-item-left">
+            <div class="pax-icon">👤</div>
+            <div>
+              <div class="pax-title">${pax.label || (TYPE_LABELS[pax.type] || 'Passenger') + ' ' + (idx + 1)}</div>
+              <div class="pax-subtitle" id="pax-subtitle-${idx}">Tap to add details</div>
+            </div>
+          </div>
+          <div class="pax-item-right">
+            <div class="chevron">▾</div>
+          </div>
+        </div>
+        <div class="pax-body">
+          <div class="pax-body-inner">
+            <div class="field">
+              <label>First Name*</label>
+              <input type="text" id="pax-fn-${idx}" placeholder="First name" oninput="markDirty(${idx})">
+            </div>
+            <div class="field">
+              <label>Last Name*</label>
+              <input type="text" id="pax-ln-${idx}" placeholder="Last name" oninput="markDirty(${idx})">
+            </div>
+            <div class="field full">
+              <label>Gender*</label>
+              <div class="gender-pick" id="pax-gender-${idx}">
+                <div class="gender-opt" data-val="M" onclick="pickGender(${idx}, 'M')">Male</div>
+                <div class="gender-opt" data-val="F" onclick="pickGender(${idx}, 'F')">Female</div>
+              </div>
+            </div>
+            <div class="field">
+              <label>Date of Birth*</label>
+              <input type="date" id="pax-dob-${idx}" oninput="markDirty(${idx})">
+            </div>
+            <div class="field">
+              <label>Nationality</label>
+              <input type="text" id="pax-nat-${idx}" value="IN" placeholder="IN" oninput="markDirty(${idx})">
+            </div>
+            ${pax.type === 'INF' ? `
+            <div class="field full">
+              <label>Travelling with*</label>
+              <select id="pax-attach-${idx}" onchange="markDirty(${idx})">
+                <option value="">Select adult/senior passenger</option>
+                ${adultOptions.map(a => `<option value="${a.key}">${a.label || (TYPE_LABELS[a.type] + ' ' + (a.i + 1))}</option>`).join('')}
+              </select>
+            </div>` : ''}
+          </div>
+        </div>
+      `;
+      list.appendChild(item);
+    });
+
+    // Expand the first passenger by default.
+    if (paxMeta.length > 0) togglePax(0, true);
+  }
+
+  function togglePax(idx, forceOpen) {
+    const item = document.getElementById(`pax-item-${idx}`);
+    if (!item) return;
+    const isOpen = item.classList.contains('expanded');
+    document.querySelectorAll('.pax-item').forEach(el => el.classList.remove('expanded'));
+    if (forceOpen || !isOpen) item.classList.add('expanded');
+  }
+
+  function pickGender(idx, val) {
+    const wrap = document.getElementById(`pax-gender-${idx}`);
+    wrap.querySelectorAll('.gender-opt').forEach(el => el.classList.toggle('sel', el.dataset.val === val));
+    wrap.dataset.value = val;
+    markDirty(idx);
+  }
+
+  function markDirty(idx) {
+    const item = document.getElementById(`pax-item-${idx}`);
+    if (item) item.classList.remove('invalid');
+    updateSubtitle(idx);
+  }
+
+  function updateSubtitle(idx) {
+    const fn = document.getElementById(`pax-fn-${idx}`)?.value.trim();
+    const ln = document.getElementById(`pax-ln-${idx}`)?.value.trim();
+    const sub = document.getElementById(`pax-subtitle-${idx}`);
+    if (!sub) return;
+    sub.textContent = (fn || ln) ? `${fn} ${ln}`.trim() : 'Tap to add details';
+  }
+
+  function updatePriceBar() {
+    document.getElementById('price-display').textContent =
+      `${currencyCode} ${totalAmount ? totalAmount.toLocaleString('en-IN') : '0'}`;
+  }
+
+  function toggleSummary() {
+    if (tripSummary) {
+      alert(`Trip Summary:\n${tripSummary}\n\nTotal: ${currencyCode} ${totalAmount.toLocaleString('en-IN')}`);
+    } else {
+      alert('No trip summary available.');
+    }
+  }
+
+  // ---------------------------------------------------------
+  // Validation + payload build
+  // ---------------------------------------------------------
+  function collectPassenger(idx, pax) {
+    const gender = document.getElementById(`pax-gender-${idx}`)?.dataset.value || '';
+    return {
+      key: pax.key,
+      type: pax.type,
+      firstName: document.getElementById(`pax-fn-${idx}`)?.value.trim() || '',
+      lastName: document.getElementById(`pax-ln-${idx}`)?.value.trim() || '',
+      gender,
+      dob: document.getElementById(`pax-dob-${idx}`)?.value || '',
+      nationality: document.getElementById(`pax-nat-${idx}`)?.value.trim() || 'IN',
+      attachTo: pax.type === 'INF' ? (document.getElementById(`pax-attach-${idx}`)?.value || '') : ''
+    };
+  }
+
+  function validateAll() {
+    let firstInvalidIdx = -1;
+    const passengers = paxMeta.map((pax, idx) => {
+      const p = collectPassenger(idx, pax);
+      const missing = !p.firstName || !p.lastName || !p.gender || !p.dob || (pax.type === 'INF' && !p.attachTo);
+      const item = document.getElementById(`pax-item-${idx}`);
+      if (missing) {
+        item.classList.add('invalid');
+        if (firstInvalidIdx === -1) firstInvalidIdx = idx;
+      } else {
+        item.classList.remove('invalid');
+        item.classList.add('done');
+      }
+      return p;
+    });
+
+    if (firstInvalidIdx !== -1) {
+      togglePax(firstInvalidIdx, true);
+      document.getElementById(`pax-item-${firstInvalidIdx}`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return null;
+    }
+
+    return { passengers };
+  }
+
+  // Serializes to a compact "field|field|..." per passenger joined by ";;",
+  // mirroring the delimiter scheme the seat-selection webview uses so the
+  // bot side can parse it the same way.
+  function buildPayloadString(data) {
+    const paxPart = data.passengers
+      .map(p => [p.key, p.type, p.firstName, p.lastName, p.gender, p.dob, p.nationality, p.attachTo].join('|'))
+      .join(';;');
+    return `passengers=${paxPart}`;
+  }
+
+  function sendPassengerDetailsToBot(payload) {
+    const encoded = encodeURIComponent(payload.split(',').join(';;').split('&').join('^%'));
+    const text = `{Capture ${encoded} in capture_passenger_details_payload and execute function book_a_new_flight}`;
+
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(
+        `http://haptik-webview//perform-action?action=close&message=${text}&message_type=0`,
+        '*'
+      );
+    } else {
+      console.log('Passenger details payload:', payload);
+      alert('Passenger details captured (dev mode):\n' + payload);
+    }
+  }
+
+  function handleContinue() {
+    const data = validateAll();
+    if (!data) return;
+
+    const btn = document.getElementById('continue-btn');
+    btn.disabled = true;
+    btn.textContent = 'Submitting...';
+
+    const payload = buildPayloadString(data);
+    setTimeout(() => sendPassengerDetailsToBot(payload), 400);
+  }
+
+  init();
+</script>
+</body>
+</html>
