@@ -392,7 +392,7 @@
 
     if (window.parent && window.parent !== window) {
       window.parent.postMessage(
-        `http://haptik-webview//perform-action?action=close&message=${text}&message_type=0`,
+        `http://haptik-webview//perform-action?action=close&message=${encodeURIComponent(text)}&message_type=0`,
         '*'
       );
     } else {
