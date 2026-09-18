@@ -67,7 +67,7 @@
     max-height: 0; overflow: hidden; transition: max-height 0.2s ease;
     background: #fff;
   }
-  .pax-item.expanded .pax-body { max-height: 600px; }
+  .pax-item.expanded .pax-body { max-height: 1400px; }
   .pax-body-inner { padding: 4px 18px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   @media (max-width: 560px) { .pax-body-inner { grid-template-columns: 1fr; } }
 
@@ -88,6 +88,14 @@
     font-size: 13px; font-weight: 600; color: #555; cursor: pointer; transition: 0.15s;
   }
   .gender-opt.sel { border-color: #e8630a; background: #fff3ec; color: #c05000; }
+
+  /* ── INFANT DETAILS ── */
+  .infant-section { grid-column:1 / -1; margin-top:4px; padding:16px; border:1.5px solid #e8630a; border-radius:10px; background:#fff8f2; }
+  .infant-section-head { margin-bottom:14px; }
+  .infant-title { font-size:15px; font-weight:800; color:#c05000; }
+  .infant-note { margin-top:3px; font-size:11px; color:#888; }
+  .infant-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:560px) { .infant-grid { grid-template-columns:1fr; } }
 
   /* ── BOTTOM BAR ── */
   .bottom-bar {
@@ -145,272 +153,317 @@
   </div>
 
 <script>
-  // ---------------------------------------------------------
-  // Query params (same pattern as the seat-selection webview)
-  // ---------------------------------------------------------
-  let baseUrl = '';
-  let authToken = '';
-  let qpApiKey = '';
-  let qpSource = 'CHATBOTWEB';
-  let customerNumber = '';
-  let tripSummary = '';
-  let totalAmount = 0;
-  let currencyCode = 'INR';
+  // Infants are NOT independent seat-bearing passenger keys in Akasa.
+  // They are rendered inside their accompanying ADT/SNR passenger card.
+  let baseUrl='', authToken='', qpApiKey='', qpSource='CHATBOTWEB';
+  let customerNumber='', tripSummary='', totalAmount=0, currencyCode='INR';
+  let infantCount=0, paxMeta=[];
 
-  // passenger_meta: JSON-encoded array, one entry per passenger, in the
-  // exact order the backend expects them back (matches passengerKeys order
-  // from /create-trip). Each entry:
-  //   { key: "<passengerKey>", type: "ADT"|"SNR"|"CHD"|"INF", label: "Adult 1" }
-  // Falls back to building a generic list from adult/senior/child/infant
-  // counts if passenger_meta isn't supplied (useful for local testing).
-  let paxMeta = [];
+  const TYPE_LABELS={ADT:'Adult',SNR:'Senior Citizen',CHD:'Child'};
 
-  function getQueryParam(name) {
-    return new URLSearchParams(window.location.search).get(name) || '';
-  }
+  function getQueryParam(name){return new URLSearchParams(window.location.search).get(name)||'';}
 
-  function buildFallbackPaxMeta() {
-    const adults = parseInt(getQueryParam('adult_count') || '1', 10) || 0;
-    const seniors = parseInt(getQueryParam('senior_count') || '0', 10) || 0;
-    const children = parseInt(getQueryParam('child_count') || '0', 10) || 0;
-    const infants = parseInt(getQueryParam('infant_count') || '0', 10) || 0;
-    const meta = [];
-    for (let i = 1; i <= adults; i++) meta.push({ key: `ADT_${i}`, type: 'ADT', label: `Adult ${i}` });
-    for (let i = 1; i <= seniors; i++) meta.push({ key: `SNR_${i}`, type: 'SNR', label: `Senior Citizen ${i}` });
-    for (let i = 1; i <= children; i++) meta.push({ key: `CHD_${i}`, type: 'CHD', label: `Child ${i}` });
-    for (let i = 1; i <= infants; i++) meta.push({ key: `INF_${i}`, type: 'INF', label: `Infant ${i}` });
+  function buildFallbackPaxMeta(){
+    const adults=parseInt(getQueryParam('adult_count')||'1',10)||0;
+    const seniors=parseInt(getQueryParam('senior_count')||'0',10)||0;
+    const children=parseInt(getQueryParam('child_count')||'0',10)||0;
+    const meta=[];
+    for(let i=1;i<=adults;i++)meta.push({key:`ADT_${i}`,type:'ADT',label:`Adult ${i}`});
+    for(let i=1;i<=seniors;i++)meta.push({key:`SNR_${i}`,type:'SNR',label:`Senior Citizen ${i}`});
+    for(let i=1;i<=children;i++)meta.push({key:`CHD_${i}`,type:'CHD',label:`Child ${i}`});
     return meta;
   }
 
-  const TYPE_LABELS = { ADT: 'Adult', SNR: 'Senior Citizen', CHD: 'Child', INF: 'Infant' };
-
-  function init() {
-    baseUrl = getQueryParam('base_url');
-    authToken = getQueryParam('auth_token');
-    qpApiKey = getQueryParam('qp_bot_api_key');
-    qpSource = getQueryParam('qp_bot_source') || 'CHATBOTWEB';
-    customerNumber = getQueryParam('customer_number');
-    tripSummary = getQueryParam('trip_summary') || '';
-    const amountStr = getQueryParam('total_amount');
-    totalAmount = amountStr ? parseFloat(amountStr) : 0;
-    currencyCode = getQueryParam('currency') || 'INR';
-
-    try {
-      const rawMeta = getQueryParam('passenger_meta');
-      paxMeta = rawMeta ? JSON.parse(rawMeta) : [];
-    } catch (e) {
-      paxMeta = [];
-    }
-    if (!Array.isArray(paxMeta) || paxMeta.length === 0) {
-      paxMeta = buildFallbackPaxMeta();
-    }
-
-    document.getElementById('loading').style.display = 'none';
-
-    if (tripSummary) {
-      const strip = document.getElementById('trip-strip');
-      strip.textContent = tripSummary;
-      strip.style.display = 'block';
-    }
-
-    renderPassengers();
-    updatePriceBar();
-
-    document.getElementById('main-root').style.display = 'block';
-    document.getElementById('bottom-bar').style.display = 'flex';
+  function escapeHtml(v){
+    return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
   }
 
-  // ---------------------------------------------------------
-  // Rendering
-  // ---------------------------------------------------------
-  function renderPassengers() {
-    const list = document.getElementById('pax-list');
-    list.innerHTML = '';
+  function showError(msg){
+    const box=document.getElementById('error-box');
+    box.innerHTML=`<strong>Passenger details unavailable</strong>${escapeHtml(msg)}`;
+    box.style.display='block';
+  }
 
-    paxMeta.forEach((pax, idx) => {
-      const item = document.createElement('div');
-      item.className = 'pax-item';
-      item.id = `pax-item-${idx}`;
+  function normalizeMeta(){
+    if(!Array.isArray(paxMeta))paxMeta=[];
+    paxMeta=paxMeta.filter(p=>p&&p.type!=='INF');
+    if(!paxMeta.length)paxMeta=buildFallbackPaxMeta();
 
-      const adultOptions = paxMeta
-        .map((p, i) => ({ ...p, i }))
-        .filter(p => p.type === 'ADT' || p.type === 'SNR');
+    const eligible=paxMeta.filter(p=>p.type==='ADT'||p.type==='SNR');
+    eligible.forEach(p=>{p.infantCount=0;});
 
-      item.innerHTML = `
-        <div class="pax-item-head" onclick="togglePax(${idx})">
-          <div class="pax-item-left">
-            <div class="pax-icon">👤</div>
-            <div>
-              <div class="pax-title">${pax.label || (TYPE_LABELS[pax.type] || 'Passenger') + ' ' + (idx + 1)}</div>
-              <div class="pax-subtitle" id="pax-subtitle-${idx}">Tap to add details</div>
-            </div>
+    if(infantCount>eligible.length){
+      showError('Every infant must be associated with an adult or senior citizen.');
+      return false;
+    }
+    for(let i=0;i<infantCount;i++){
+      eligible[i].infantCount=1;
+      eligible[i].infantLabel=`Infant ${i+1}`;
+    }
+    return true;
+  }
+
+  function init(){
+    baseUrl=getQueryParam('base_url');
+    authToken=getQueryParam('auth_token');
+    qpApiKey=getQueryParam('qp_bot_api_key');
+    qpSource=getQueryParam('qp_bot_source')||'CHATBOTWEB';
+    customerNumber=getQueryParam('customer_number');
+    tripSummary=getQueryParam('trip_summary')||'';
+    totalAmount=parseFloat(getQueryParam('total_amount')||'0')||0;
+    currencyCode=getQueryParam('currency')||'INR';
+    infantCount=parseInt(getQueryParam('infant_count')||'0',10)||0;
+
+    try{paxMeta=JSON.parse(getQueryParam('passenger_meta')||'[]');}
+    catch(e){console.error('passenger_meta parse error',e);paxMeta=[];}
+
+    document.getElementById('loading').style.display='none';
+    if(!normalizeMeta())return;
+
+    if(tripSummary){
+      const strip=document.getElementById('trip-strip');
+      strip.textContent=tripSummary; strip.style.display='block';
+    }
+    renderPassengers(); updatePriceBar();
+    document.getElementById('main-root').style.display='block';
+    document.getElementById('bottom-bar').style.display='flex';
+  }
+
+  function renderPassengers(){
+    const list=document.getElementById('pax-list'); list.innerHTML='';
+
+    paxMeta.forEach((pax,idx)=>{
+      const item=document.createElement('div');
+      item.className='pax-item'; item.id=`pax-item-${idx}`;
+      const label=pax.label||`${TYPE_LABELS[pax.type]||'Passenger'} ${idx+1}`;
+
+      const infantHtml=pax.infantCount>0?`
+        <div class="infant-section">
+          <div class="infant-section-head">
+            <div class="infant-title">Infant Details</div>
+            <div class="infant-note">Travelling with ${escapeHtml(label)}</div>
           </div>
-          <div class="pax-item-right">
-            <div class="chevron">▾</div>
-          </div>
-        </div>
-        <div class="pax-body">
-          <div class="pax-body-inner">
+          <div class="infant-grid">
             <div class="field">
-              <label>First Name*</label>
-              <input type="text" id="pax-fn-${idx}" placeholder="First name" oninput="markDirty(${idx})">
+              <label>Infant First Name*</label>
+              <input type="text" id="inf-fn-${idx}" placeholder="Infant first name" oninput="markDirty(${idx})">
             </div>
             <div class="field">
-              <label>Last Name*</label>
-              <input type="text" id="pax-ln-${idx}" placeholder="Last name" oninput="markDirty(${idx})">
+              <label>Infant Last Name*</label>
+              <input type="text" id="inf-ln-${idx}" placeholder="Infant last name" oninput="markDirty(${idx})">
             </div>
             <div class="field full">
-              <label>Gender*</label>
-              <div class="gender-pick" id="pax-gender-${idx}">
-                <div class="gender-opt" data-val="M" onclick="pickGender(${idx}, 'M')">Male</div>
-                <div class="gender-opt" data-val="F" onclick="pickGender(${idx}, 'F')">Female</div>
+              <label>Infant Gender*</label>
+              <div class="gender-pick" id="inf-gender-${idx}">
+                <div class="gender-opt" data-val="M" onclick="pickInfantGender(${idx},'M')">Male</div>
+                <div class="gender-opt" data-val="F" onclick="pickInfantGender(${idx},'F')">Female</div>
               </div>
             </div>
             <div class="field">
-              <label>Date of Birth*</label>
-              <input type="date" id="pax-dob-${idx}" oninput="markDirty(${idx})">
+              <label>Infant Date of Birth*</label>
+              <input type="date" id="inf-dob-${idx}" oninput="markDirty(${idx})">
             </div>
             <div class="field">
-              <label>Nationality</label>
-              <input type="text" id="pax-nat-${idx}" value="IN" placeholder="IN" oninput="markDirty(${idx})">
+              <label>Infant Nationality</label>
+              <input type="text" id="inf-nat-${idx}" value="IN" maxlength="2" placeholder="IN" oninput="markDirty(${idx})">
             </div>
-            ${pax.type === 'INF' ? `
-            <div class="field full">
-              <label>Travelling with*</label>
-              <select id="pax-attach-${idx}" onchange="markDirty(${idx})">
-                <option value="">Select adult/senior passenger</option>
-                ${adultOptions.map(a => `<option value="${a.key}">${a.label || (TYPE_LABELS[a.type] + ' ' + (a.i + 1))}</option>`).join('')}
-              </select>
-            </div>` : ''}
           </div>
+        </div>`:'';
+
+      item.innerHTML=`
+        <div class="pax-item-head" onclick="togglePax(${idx})">
+          <div class="pax-item-left">
+            <div class="pax-icon">👤</div>
+            <div><div class="pax-title">${escapeHtml(label)}</div>
+            <div class="pax-subtitle" id="pax-subtitle-${idx}">Tap to add details</div></div>
+          </div>
+          <div class="pax-item-right"><div class="chevron">▾</div></div>
         </div>
-      `;
+        <div class="pax-body"><div class="pax-body-inner">
+          <div class="field"><label>First Name*</label>
+            <input type="text" id="pax-fn-${idx}" placeholder="First name" oninput="markDirty(${idx})"></div>
+          <div class="field"><label>Last Name*</label>
+            <input type="text" id="pax-ln-${idx}" placeholder="Last name" oninput="markDirty(${idx})"></div>
+          <div class="field full"><label>Gender*</label>
+            <div class="gender-pick" id="pax-gender-${idx}">
+              <div class="gender-opt" data-val="M" onclick="pickGender(${idx},'M')">Male</div>
+              <div class="gender-opt" data-val="F" onclick="pickGender(${idx},'F')">Female</div>
+            </div>
+          </div>
+          <div class="field"><label>Date of Birth*</label>
+            <input type="date" id="pax-dob-${idx}" oninput="markDirty(${idx})"></div>
+          <div class="field"><label>Nationality</label>
+            <input type="text" id="pax-nat-${idx}" value="IN" maxlength="2" placeholder="IN" oninput="markDirty(${idx})"></div>
+          ${infantHtml}
+        </div></div>`;
       list.appendChild(item);
     });
-
-    // Expand the first passenger by default.
-    if (paxMeta.length > 0) togglePax(0, true);
+    if(paxMeta.length)togglePax(0,true);
   }
 
-  function togglePax(idx, forceOpen) {
-    const item = document.getElementById(`pax-item-${idx}`);
-    if (!item) return;
-    const isOpen = item.classList.contains('expanded');
-    document.querySelectorAll('.pax-item').forEach(el => el.classList.remove('expanded'));
-    if (forceOpen || !isOpen) item.classList.add('expanded');
+  function togglePax(idx,forceOpen){
+    const item=document.getElementById(`pax-item-${idx}`); if(!item)return;
+    const open=item.classList.contains('expanded');
+    document.querySelectorAll('.pax-item').forEach(e=>e.classList.remove('expanded'));
+    if(forceOpen||!open)item.classList.add('expanded');
   }
 
-  function pickGender(idx, val) {
-    const wrap = document.getElementById(`pax-gender-${idx}`);
-    wrap.querySelectorAll('.gender-opt').forEach(el => el.classList.toggle('sel', el.dataset.val === val));
-    wrap.dataset.value = val;
-    markDirty(idx);
+  function pickGender(idx,val){
+    const wrap=document.getElementById(`pax-gender-${idx}`); if(!wrap)return;
+    wrap.querySelectorAll('.gender-opt').forEach(e=>e.classList.toggle('sel',e.dataset.val===val));
+    wrap.dataset.value=val; markDirty(idx);
   }
 
-  function markDirty(idx) {
-    const item = document.getElementById(`pax-item-${idx}`);
-    if (item) item.classList.remove('invalid');
+  function pickInfantGender(idx,val){
+    const wrap=document.getElementById(`inf-gender-${idx}`); if(!wrap)return;
+    wrap.querySelectorAll('.gender-opt').forEach(e=>e.classList.toggle('sel',e.dataset.val===val));
+    wrap.dataset.value=val; markDirty(idx);
+  }
+
+  function markDirty(idx){
+    document.getElementById(`pax-item-${idx}`)?.classList.remove('invalid');
     updateSubtitle(idx);
   }
 
-  function updateSubtitle(idx) {
-    const fn = document.getElementById(`pax-fn-${idx}`)?.value.trim();
-    const ln = document.getElementById(`pax-ln-${idx}`)?.value.trim();
-    const sub = document.getElementById(`pax-subtitle-${idx}`);
-    if (!sub) return;
-    sub.textContent = (fn || ln) ? `${fn} ${ln}`.trim() : 'Tap to add details';
+  function updateSubtitle(idx){
+    const fn=document.getElementById(`pax-fn-${idx}`)?.value.trim()||'';
+    const ln=document.getElementById(`pax-ln-${idx}`)?.value.trim()||'';
+    const sub=document.getElementById(`pax-subtitle-${idx}`); if(!sub)return;
+    const adultName=`${fn} ${ln}`.trim();
+    if(paxMeta[idx]?.infantCount>0){
+      const ifn=document.getElementById(`inf-fn-${idx}`)?.value.trim()||'';
+      const iln=document.getElementById(`inf-ln-${idx}`)?.value.trim()||'';
+      const infantName=`${ifn} ${iln}`.trim();
+      sub.textContent=adultName&&infantName?`${adultName} • Infant: ${infantName}`
+        :adultName?`${adultName} • Infant details required`:'Adult + infant details required';
+    }else sub.textContent=adultName||'Tap to add details';
   }
 
-  function updatePriceBar() {
-    document.getElementById('price-display').textContent =
-      `${currencyCode} ${totalAmount ? totalAmount.toLocaleString('en-IN') : '0'}`;
+  function updatePriceBar(){
+    document.getElementById('price-display').textContent=
+      `${currencyCode} ${totalAmount?totalAmount.toLocaleString('en-IN'):'0'}`;
   }
 
-  function toggleSummary() {
-    if (tripSummary) {
-      alert(`Trip Summary:\n${tripSummary}\n\nTotal: ${currencyCode} ${totalAmount.toLocaleString('en-IN')}`);
-    } else {
-      alert('No trip summary available.');
-    }
+  function toggleSummary(){
+    alert(tripSummary?`Trip Summary:\n${tripSummary}\n\nTotal: ${currencyCode} ${totalAmount.toLocaleString('en-IN')}`:'No trip summary available.');
   }
 
-  // ---------------------------------------------------------
-  // Validation + payload build
-  // ---------------------------------------------------------
-  function collectPassenger(idx, pax) {
-    const gender = document.getElementById(`pax-gender-${idx}`)?.dataset.value || '';
-    return {
-      key: pax.key,
-      type: pax.type,
-      firstName: document.getElementById(`pax-fn-${idx}`)?.value.trim() || '',
-      lastName: document.getElementById(`pax-ln-${idx}`)?.value.trim() || '',
-      gender,
-      dob: document.getElementById(`pax-dob-${idx}`)?.value || '',
-      nationality: document.getElementById(`pax-nat-${idx}`)?.value.trim() || 'IN',
-      attachTo: pax.type === 'INF' ? (document.getElementById(`pax-attach-${idx}`)?.value || '') : ''
+  function collectPassenger(idx,pax){
+    const result={
+      key:pax.key,type:pax.type,
+      firstName:document.getElementById(`pax-fn-${idx}`)?.value.trim()||'',
+      lastName:document.getElementById(`pax-ln-${idx}`)?.value.trim()||'',
+      gender:document.getElementById(`pax-gender-${idx}`)?.dataset.value||'',
+      dob:document.getElementById(`pax-dob-${idx}`)?.value||'',
+      nationality:(document.getElementById(`pax-nat-${idx}`)?.value.trim()||'IN').toUpperCase(),
+      infant:null
     };
+    if(pax.infantCount>0){
+      result.infant={
+        firstName:document.getElementById(`inf-fn-${idx}`)?.value.trim()||'',
+        lastName:document.getElementById(`inf-ln-${idx}`)?.value.trim()||'',
+        gender:document.getElementById(`inf-gender-${idx}`)?.dataset.value||'',
+        dob:document.getElementById(`inf-dob-${idx}`)?.value||'',
+        nationality:(document.getElementById(`inf-nat-${idx}`)?.value.trim()||'IN').toUpperCase()
+      };
+    }
+    return result;
   }
 
-  function validateAll() {
-    let firstInvalidIdx = -1;
-    const passengers = paxMeta.map((pax, idx) => {
-      const p = collectPassenger(idx, pax);
-      const missing = !p.firstName || !p.lastName || !p.gender || !p.dob || (pax.type === 'INF' && !p.attachTo);
-      const item = document.getElementById(`pax-item-${idx}`);
-      if (missing) {
-        item.classList.add('invalid');
-        if (firstInvalidIdx === -1) firstInvalidIdx = idx;
-      } else {
-        item.classList.remove('invalid');
-        item.classList.add('done');
+  function validateAll(){
+    let firstInvalid=-1, infantDone=0;
+    const passengers=paxMeta.map((pax,idx)=>{
+      const p=collectPassenger(idx,pax);
+      let missing=!p.firstName||!p.lastName||!p.gender||!p.dob;
+      if(p.infant){
+        infantDone++;
+        missing=missing||!p.infant.firstName||!p.infant.lastName||!p.infant.gender||!p.infant.dob;
       }
+      const item=document.getElementById(`pax-item-${idx}`);
+      if(missing){item.classList.add('invalid');if(firstInvalid===-1)firstInvalid=idx;}
+      else{item.classList.remove('invalid');item.classList.add('done');}
       return p;
     });
 
-    if (firstInvalidIdx !== -1) {
-      togglePax(firstInvalidIdx, true);
-      document.getElementById(`pax-item-${firstInvalidIdx}`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if(infantDone!==infantCount){
+      alert(`Please enter complete details for all ${infantCount} infant(s).`);
+      const i=paxMeta.findIndex(p=>p.infantCount>0);
+      if(i>=0){togglePax(i,true);document.getElementById(`pax-item-${i}`)?.scrollIntoView({behavior:'smooth',block:'center'});}
       return null;
     }
-
-    return { passengers };
+    if(firstInvalid!==-1){
+      togglePax(firstInvalid,true);
+      document.getElementById(`pax-item-${firstInvalid}`)?.scrollIntoView({behavior:'smooth',block:'center'});
+      return null;
+    }
+    return {passengers};
   }
 
-  // Serializes to a compact "field|field|..." per passenger joined by ";;",
-  // mirroring the delimiter scheme the seat-selection webview uses so the
-  // bot side can parse it the same way.
-  function buildPayloadString(data) {
-    const paxPart = data.passengers
-      .map(p => [p.key, p.type, p.firstName, p.lastName, p.gender, p.dob, p.nationality, p.attachTo].join('|'))
-      .join(';;');
-    return `passengers=${paxPart}`;
+  // One record = one real Akasa passengerKey.
+  // Infant data is appended to that accompanying passenger record.
+  // IMPORTANT: Do not send passenger data as pipe-delimited text.
+  // Haptik can decode/truncate pipe-delimited capture values, which was the
+  // reason the infant fields disappeared between this page and Python.
+  // Encode the complete JSON as URL-safe Base64. The capture value then
+  // contains only [A-Za-z0-9_-], so no |, ;, &, %, or spaces can be lost.
+  function buildPayloadString(data){
+    const payloadObject={
+      version:2,
+      passengers:data.passengers.map(p=>({
+        key:p.key,
+        type:p.type,
+        firstName:p.firstName,
+        lastName:p.lastName,
+        gender:p.gender,
+        dob:p.dob,
+        nationality:p.nationality,
+        infant:p.infant?{
+          firstName:p.infant.firstName,
+          lastName:p.infant.lastName,
+          gender:p.infant.gender,
+          dob:p.infant.dob,
+          nationality:p.infant.nationality
+        }:null
+      }))
+    };
+
+    const json=JSON.stringify(payloadObject);
+    // UTF-8 -> URL-safe Base64 without padding.
+    const bytes=new TextEncoder().encode(json);
+    let binary='';
+    const chunkSize=0x8000;
+    for(let i=0;i<bytes.length;i+=chunkSize){
+      binary+=String.fromCharCode(...bytes.subarray(i,i+chunkSize));
+    }
+    return btoa(binary)
+      .replace(/\+/g,'-')
+      .replace(/\//g,'_')
+      .replace(/=+$/,'');
   }
 
-  function sendPassengerDetailsToBot(payload) {
-    const encoded = encodeURIComponent(payload.split(',').join(';;').split('&').join('^%'));
-    const text = `{Capture ${encoded} in capture_passenger_details_payload and execute function book_a_new_flight}`;
-
-    if (window.parent && window.parent !== window) {
+  function sendPassengerDetailsToBot(payload){
+    // Keep the capture prefix unchanged so no Haptik flow configuration change
+    // is required. Only the value format is changed to URL-safe Base64.
+    const text=`{Capture passengers=${payload} in capture_passenger_details_payload and execute function book_a_new_flight}`;
+    console.log('Passenger details capture value:',payload);
+    if(window.parent&&window.parent!==window){
       window.parent.postMessage(
-        `http://haptik-webview//perform-action?action=close&message=${encodeURIComponent(text)}&message_type=0`,
-        '*'
+        `http://haptik-webview//perform-action?action=close&message=${text}&message_type=0`,'*'
       );
-    } else {
-      console.log('Passenger details payload:', payload);
-      alert('Passenger details captured (dev mode):\n' + payload);
+    }else{
+      console.log('Passenger details payload:',payload);
+      alert('Passenger details captured (dev mode):\n'+payload);
     }
   }
 
-  function handleContinue() {
-    const data = validateAll();
-    if (!data) return;
-
-    const btn = document.getElementById('continue-btn');
-    btn.disabled = true;
-    btn.textContent = 'Submitting...';
-
-    const payload = buildPayloadString(data);
-    setTimeout(() => sendPassengerDetailsToBot(payload), 400);
+  function handleContinue(){
+    const data=validateAll(); if(!data)return;
+    const btn=document.getElementById('continue-btn');
+    btn.disabled=true; btn.textContent='Submitting...';
+    const payload=buildPayloadString(data);
+    console.log('Passenger details submission:',JSON.stringify(data));
+    setTimeout(()=>sendPassengerDetailsToBot(payload),400);
   }
 
   init();
