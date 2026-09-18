@@ -387,18 +387,27 @@
   }
 
   function sendPassengerDetailsToBot(payload) {
-    const encoded = encodeURIComponent(payload.split(',').join(';;').split('&').join('^%'));
-    const text = `{Capture ${encoded} in capture_passenger_details_payload and execute function book_a_new_flight}`;
+    // Haptik expects ONE URL-encoded `message` query parameter.
+    // Do not pre-encode the payload separately: doing so can leave the bot
+    // with a callback it cannot parse and makes the passenger card reopen.
+    const message =
+      `{Capture ${payload} in capture_passenger_details_payload and execute function book_a_new_flight}`;
 
+    const callbackUrl =
+      `http://haptik-webview//perform-action?action=close` +
+      `&message=${encodeURIComponent(message)}` +
+      `&message_type=0`;
+
+    console.log("Haptik passenger callback:", message);
+
+    // Web SDK: send the close URL to the parent frame.
     if (window.parent && window.parent !== window) {
-      window.parent.postMessage(
-        `http://haptik-webview//perform-action?action=close&message=${encodeURIComponent(text)}&message_type=0`,
-        '*'
-      );
-    } else {
-      console.log('Passenger details payload:', payload);
-      alert('Passenger details captured (dev mode):\n' + payload);
+      window.parent.postMessage(callbackUrl, "*");
+      return;
     }
+
+    // Native/fallback: navigate to the haptik-webview URL.
+    window.location.href = callbackUrl;
   }
 
   function handleContinue() {
