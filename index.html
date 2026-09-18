@@ -402,20 +402,51 @@
 
   // One record = one real Akasa passengerKey.
   // Infant data is appended to that accompanying passenger record.
+  // IMPORTANT: Do not send passenger data as pipe-delimited text.
+  // Haptik can decode/truncate pipe-delimited capture values, which was the
+  // reason the infant fields disappeared between this page and Python.
+  // Encode the complete JSON as URL-safe Base64. The capture value then
+  // contains only [A-Za-z0-9_-], so no |, ;, &, %, or spaces can be lost.
   function buildPayloadString(data){
-    const part=data.passengers.map(p=>{
-      const i=p.infant||{};
-      return [
-        p.key,p.type,p.firstName,p.lastName,p.gender,p.dob,p.nationality,
-        i.firstName||'',i.lastName||'',i.gender||'',i.dob||'',i.nationality||''
-      ].join('|');
-    }).join(';;');
-    return `passengers=${part}`;
+    const payloadObject={
+      version:2,
+      passengers:data.passengers.map(p=>({
+        key:p.key,
+        type:p.type,
+        firstName:p.firstName,
+        lastName:p.lastName,
+        gender:p.gender,
+        dob:p.dob,
+        nationality:p.nationality,
+        infant:p.infant?{
+          firstName:p.infant.firstName,
+          lastName:p.infant.lastName,
+          gender:p.infant.gender,
+          dob:p.infant.dob,
+          nationality:p.infant.nationality
+        }:null
+      }))
+    };
+
+    const json=JSON.stringify(payloadObject);
+    // UTF-8 -> URL-safe Base64 without padding.
+    const bytes=new TextEncoder().encode(json);
+    let binary='';
+    const chunkSize=0x8000;
+    for(let i=0;i<bytes.length;i+=chunkSize){
+      binary+=String.fromCharCode(...bytes.subarray(i,i+chunkSize));
+    }
+    return btoa(binary)
+      .replace(/\+/g,'-')
+      .replace(/\//g,'_')
+      .replace(/=+$/,'');
   }
 
   function sendPassengerDetailsToBot(payload){
-    const encoded=encodeURIComponent(payload.split(',').join(';;').split('&').join('^%'));
-    const text=`{Capture ${encoded} in capture_passenger_details_payload and execute function book_a_new_flight}`;
+    // Keep the capture prefix unchanged so no Haptik flow configuration change
+    // is required. Only the value format is changed to URL-safe Base64.
+    const text=`{Capture passengers=${payload} in capture_passenger_details_payload and execute function book_a_new_flight}`;
+    console.log('Passenger details capture value:',payload);
     if(window.parent&&window.parent!==window){
       window.parent.postMessage(
         `http://haptik-webview//perform-action?action=close&message=${text}&message_type=0`,'*'
