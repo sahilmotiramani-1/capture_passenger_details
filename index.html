@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Akasa Air - Passenger Details</title>
+<title>Akasa Air - Passenger Details V4</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; color: #222; }
@@ -153,6 +153,7 @@
   </div>
 
 <script>
+  // PASSENGER WEBVIEW V4 - infant details are mandatory and rendered visibly.
   // Infants are NOT independent seat-bearing passenger keys in Akasa.
   // They are rendered inside their accompanying ADT/SNR passenger card.
   let baseUrl='', authToken='', qpApiKey='', qpSource='CHATBOTWEB';
@@ -213,10 +214,18 @@
     tripSummary=getQueryParam('trip_summary')||'';
     totalAmount=parseFloat(getQueryParam('total_amount')||'0')||0;
     currencyCode=getQueryParam('currency')||'INR';
-    infantCount=parseInt(getQueryParam('infant_count')||'0',10)||0;
-
+    // Read passenger metadata first.  The backend marks the adult/senior
+    // passenger(s) that have an infant with infantCount=1.
+    // Do NOT depend only on infant_count query-param because older Haptik
+    // webview launches can omit that parameter.
     try{paxMeta=JSON.parse(getQueryParam('passenger_meta')||'[]');}
     catch(e){console.error('passenger_meta parse error',e);paxMeta=[];}
+
+    const queryInfantCount=parseInt(getQueryParam('infant_count')||'0',10)||0;
+    const metaInfantCount=Array.isArray(paxMeta)
+      ? paxMeta.reduce((sum,p)=>sum+(parseInt(p?.infantCount||'0',10)||0),0)
+      : 0;
+    infantCount=Math.max(queryInfantCount,metaInfantCount);
 
     document.getElementById('loading').style.display='none';
     if(!normalizeMeta())return;
@@ -233,6 +242,13 @@
   function renderPassengers(){
     const list=document.getElementById('pax-list'); list.innerHTML='';
 
+    if(infantCount>0){
+      const notice=document.createElement('div');
+      notice.style.cssText='background:#fff3ec;border:1.5px solid #e8630a;border-radius:10px;padding:14px 16px;margin-bottom:14px;color:#c05000;font-size:13px;line-height:1.45;';
+      notice.innerHTML=`<strong>Infant details required</strong><br>Please enter complete details for ${infantCount} infant${infantCount===1?'':'s'} below. Infant details are linked to the accompanying adult.`;
+      list.appendChild(notice);
+    }
+
     paxMeta.forEach((pax,idx)=>{
       const item=document.createElement('div');
       item.className='pax-item'; item.id=`pax-item-${idx}`;
@@ -241,8 +257,8 @@
       const infantHtml=pax.infantCount>0?`
         <div class="infant-section">
           <div class="infant-section-head">
-            <div class="infant-title">Infant Details</div>
-            <div class="infant-note">Travelling with ${escapeHtml(label)}</div>
+            <div class="infant-title">Infant Details <span style="color:#d94b3d;">*</span></div>
+            <div class="infant-note">Required • Travelling with ${escapeHtml(label)}</div>
           </div>
           <div class="infant-grid">
             <div class="field">
@@ -299,7 +315,10 @@
         </div></div>`;
       list.appendChild(item);
     });
-    if(paxMeta.length)togglePax(0,true);
+    if(paxMeta.length){
+      const firstInfantPax=paxMeta.findIndex(p=>p&&p.infantCount>0);
+      togglePax(firstInfantPax>=0?firstInfantPax:0,true);
+    }
   }
 
   function togglePax(idx,forceOpen){
@@ -387,6 +406,11 @@
     });
 
     if(infantDone!==infantCount){
+      console.error('INFANT_VALIDATION_FAILED', {
+        expected: infantCount,
+        completed: infantDone,
+        meta: paxMeta
+      });
       alert(`Please enter complete details for all ${infantCount} infant(s).`);
       const i=paxMeta.findIndex(p=>p.infantCount>0);
       if(i>=0){togglePax(i,true);document.getElementById(`pax-item-${i}`)?.scrollIntoView({behavior:'smooth',block:'center'});}
