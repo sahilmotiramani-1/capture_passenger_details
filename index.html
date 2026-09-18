@@ -443,17 +443,26 @@
   }
 
   function sendPassengerDetailsToBot(payload){
-    // Keep the capture prefix unchanged so no Haptik flow configuration change
-    // is required. Only the value format is changed to URL-safe Base64.
-    const text=`{Capture passengers=${payload} in capture_passenger_details_payload and execute function book_a_new_flight}`;
-    console.log('Passenger details capture value:',payload);
-    if(window.parent&&window.parent!==window){
-      window.parent.postMessage(
-        `http://haptik-webview//perform-action?action=close&message=${text}&message_type=0`,'*'
-      );
+    // V3: send a single URL-safe Base64 payload. The explicit V3 marker makes
+    // it immediately obvious in Lambda logs whether the deployed webview is
+    // the new version or an old cached version.
+    const captureValue = `V3:${payload}`;
+    const text = `{Capture passengers=${captureValue} in capture_passenger_details_payload and execute function book_a_new_flight}`;
+
+    console.log('PASSENGER_WEBVIEW_V3_SUBMIT');
+    console.log('Passenger details capture value:', captureValue);
+
+    if(window.parent && window.parent !== window){
+      // IMPORTANT: encode the complete message because it is embedded inside
+      // the haptik-webview perform-action URL. Do not leave spaces/braces/etc.
+      // unescaped in the URL.
+      const actionUrl =
+        `http://haptik-webview//perform-action?action=close&message=${encodeURIComponent(text)}&message_type=0`;
+
+      window.parent.postMessage(actionUrl, '*');
     }else{
-      console.log('Passenger details payload:',payload);
-      alert('Passenger details captured (dev mode):\n'+payload);
+      console.log('Passenger details payload:', captureValue);
+      alert('Passenger details captured (dev mode):\n' + captureValue);
     }
   }
 
