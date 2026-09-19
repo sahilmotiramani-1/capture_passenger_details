@@ -81,6 +81,15 @@
   .field input:focus, .field select:focus { border-color: #e8630a; }
   .field input.err, .field select.err { border-color: #d94b3d; }
   .field .hint { font-size: 10.5px; color: #999; }
+  .field .error-message {
+    display: none;
+    font-size: 11px;
+    color: #d94b3d;
+    line-height: 1.35;
+  }
+  .field.has-error .error-message { display: block; }
+  .field.has-error input,
+  .field.has-error select { border-color: #d94b3d; }
 
   .gender-pick { display: flex; gap: 10px; }
   .gender-opt {
@@ -251,13 +260,29 @@
         </div>
         <div class="pax-body">
           <div class="pax-body-inner">
-            <div class="field">
+            <div class="field" id="pax-fn-field-${idx}">
               <label>First Name*</label>
-              <input type="text" id="pax-fn-${idx}" placeholder="First name" oninput="markDirty(${idx})">
+              <input
+                type="text"
+                id="pax-fn-${idx}"
+                placeholder="First name"
+                maxlength="50"
+                autocomplete="given-name"
+                oninput="markDirty(${idx})"
+              >
+              <div class="error-message" id="pax-fn-error-${idx}"></div>
             </div>
-            <div class="field">
+            <div class="field" id="pax-ln-field-${idx}">
               <label>Last Name*</label>
-              <input type="text" id="pax-ln-${idx}" placeholder="Last name" oninput="markDirty(${idx})">
+              <input
+                type="text"
+                id="pax-ln-${idx}"
+                placeholder="Last name"
+                maxlength="50"
+                autocomplete="family-name"
+                oninput="markDirty(${idx})"
+              >
+              <div class="error-message" id="pax-ln-error-${idx}"></div>
             </div>
             <div class="field full">
               <label>Gender*</label>
@@ -266,9 +291,16 @@
                 <div class="gender-opt" data-val="F" onclick="pickGender(${idx}, 'F')">Female</div>
               </div>
             </div>
-            <div class="field">
+            <div class="field" id="pax-dob-field-${idx}">
               <label>Date of Birth*</label>
-              <input type="date" id="pax-dob-${idx}" oninput="markDirty(${idx})">
+              <input
+                type="date"
+                id="pax-dob-${idx}"
+                max=""
+                autocomplete="bday"
+                oninput="markDirty(${idx})"
+              >
+              <div class="error-message" id="pax-dob-error-${idx}"></div>
             </div>
             <div class="field">
               <label>Nationality</label>
@@ -286,6 +318,18 @@
         </div>
       `;
       list.appendChild(item);
+    });
+
+    // Prevent selecting a future date of birth.
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const maxDob = `${yyyy}-${mm}-${dd}`;
+
+    paxMeta.forEach((_, idx) => {
+      const dobInput = document.getElementById(`pax-dob-${idx}`);
+      if (dobInput) dobInput.max = maxDob;
     });
 
     // Expand the first passenger by default.
@@ -307,9 +351,252 @@
     markDirty(idx);
   }
 
+  // ---------------------------------------------------------
+  // Field + passenger validation
+  // ---------------------------------------------------------
+
+  // Passenger age rules:
+  // ADT = 18 years or older
+  // SNR = 60 years or older
+  // CHD = 2 years or older and below 18
+  // INF = below 2 years
+  //
+  // Note: At exactly 2 years, the passenger is treated as CHD.
+  // Age is calculated as of today's date (the booking date).
+  function calculateAge(dobString) {
+    if (!dobString) return null;
+
+    const dob = new Date(`${dobString}T00:00:00`);
+    if (Number.isNaN(dob.getTime())) return null;
+
+    const today = new Date();
+    const todayOnly = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate()
+    );
+
+    if (dob > todayOnly) return null;
+
+    let age = todayOnly.getFullYear() - dob.getFullYear();
+
+    const birthdayPassed =
+      todayOnly.getMonth() > dob.getMonth() ||
+      (
+        todayOnly.getMonth() === dob.getMonth() &&
+        todayOnly.getDate() >= dob.getDate()
+      );
+
+    if (!birthdayPassed) age--;
+
+    return age;
+  }
+
+  function getAgeRuleMessage(type, age) {
+    switch (type) {
+      case 'ADT':
+        return age === null
+          ? 'Please enter a valid date of birth.'
+          : age < 18
+            ? 'Adult passenger must be 18 years or older.'
+            : '';
+      case 'SNR':
+        return age === null
+          ? 'Please enter a valid date of birth.'
+          : age < 60
+            ? 'Senior Citizen passenger must be 60 years or older.'
+            : '';
+      case 'CHD':
+        return age === null
+          ? 'Please enter a valid date of birth.'
+          : (age < 2 || age >= 18)
+            ? 'Child passenger must be 2 years or older and below 18 years.'
+            : '';
+      case 'INF':
+        return age === null
+          ? 'Please enter a valid date of birth.'
+          : age >= 2
+            ? 'Infant passenger must be below 2 years old.'
+            : '';
+      default:
+        return '';
+    }
+  }
+
+  // Allows normal passport/airline names such as:
+  // "Aarav", "Mary Jane", "O'Connor", "Anne-Marie".
+  // Numbers are never allowed.
+  function validateName(value, fieldLabel) {
+    const name = (value || '').trim();
+
+    if (!name) {
+      return `${fieldLabel} is required.`;
+    }
+
+    if (name.length < 1 || name.length > 50) {
+      return `${fieldLabel} must be between 1 and 50 characters.`;
+    }
+
+    if (/\d/.test(name)) {
+      return `${fieldLabel} must not contain numbers.`;
+    }
+
+    // Unicode letters + spaces + apostrophe + hyphen.
+    if (!/^[\p{L}]+(?:[ '\u2019-][\p{L}]+)*$/u.test(name)) {
+      return `${fieldLabel} can contain letters, spaces, hyphens, and apostrophes only.`;
+    }
+
+    return '';
+  }
+
+  function setFieldError(fieldId, errorId, message) {
+    const field = document.getElementById(fieldId);
+    const error = document.getElementById(errorId);
+
+    if (!field || !error) return;
+
+    field.classList.toggle('has-error', Boolean(message));
+    error.textContent = message || '';
+  }
+
+  function clearPassengerErrors(idx) {
+    [
+      [`pax-fn-field-${idx}`, `pax-fn-error-${idx}`],
+      [`pax-ln-field-${idx}`, `pax-ln-error-${idx}`],
+      [`pax-dob-field-${idx}`, `pax-dob-error-${idx}`]
+    ].forEach(([fieldId, errorId]) => {
+      setFieldError(fieldId, errorId, '');
+    });
+
+    document.getElementById(`pax-fn-${idx}`)?.classList.remove('err');
+    document.getElementById(`pax-ln-${idx}`)?.classList.remove('err');
+    document.getElementById(`pax-dob-${idx}`)?.classList.remove('err');
+  }
+
+  function validatePassenger(idx, pax, showErrors = true) {
+    const fn = document.getElementById(`pax-fn-${idx}`)?.value.trim() || '';
+    const ln = document.getElementById(`pax-ln-${idx}`)?.value.trim() || '';
+    const dob = document.getElementById(`pax-dob-${idx}`)?.value || '';
+    const gender = document.getElementById(`pax-gender-${idx}`)?.dataset.value || '';
+    const attachTo = pax.type === 'INF'
+      ? (document.getElementById(`pax-attach-${idx}`)?.value || '')
+      : '';
+
+    if (showErrors) clearPassengerErrors(idx);
+
+    let valid = true;
+
+    const fnError = validateName(fn, 'First name');
+    if (fnError) {
+      valid = false;
+      if (showErrors) {
+        setFieldError(`pax-fn-field-${idx}`, `pax-fn-error-${idx}`, fnError);
+        document.getElementById(`pax-fn-${idx}`)?.classList.add('err');
+      }
+    }
+
+    const lnError = validateName(ln, 'Last name');
+    if (lnError) {
+      valid = false;
+      if (showErrors) {
+        setFieldError(`pax-ln-field-${idx}`, `pax-ln-error-${idx}`, lnError);
+        document.getElementById(`pax-ln-${idx}`)?.classList.add('err');
+      }
+    }
+
+    if (!gender) {
+      valid = false;
+    }
+
+    if (!dob) {
+      valid = false;
+      if (showErrors) {
+        setFieldError(
+          `pax-dob-field-${idx}`,
+          `pax-dob-error-${idx}`,
+          'Date of birth is required.'
+        );
+        document.getElementById(`pax-dob-${idx}`)?.classList.add('err');
+      }
+    } else {
+      const age = calculateAge(dob);
+      const dobError = getAgeRuleMessage(pax.type, age);
+
+      if (dobError) {
+        valid = false;
+        if (showErrors) {
+          setFieldError(
+            `pax-dob-field-${idx}`,
+            `pax-dob-error-${idx}`,
+            dobError
+          );
+          document.getElementById(`pax-dob-${idx}`)?.classList.add('err');
+        }
+      }
+    }
+
+    if (pax.type === 'INF' && !attachTo) {
+      valid = false;
+    }
+
+    return valid;
+  }
+
   function markDirty(idx) {
     const item = document.getElementById(`pax-item-${idx}`);
-    if (item) item.classList.remove('invalid');
+    if (item) {
+      item.classList.remove('invalid');
+      item.classList.remove('done');
+    }
+
+    const pax = paxMeta[idx];
+    if (pax) {
+      // Validate live so the user immediately sees name/DOB errors,
+      // but do not show required-field errors until Continue is pressed.
+      validatePassenger(idx, pax, false);
+
+      const fn = document.getElementById(`pax-fn-${idx}`)?.value.trim() || '';
+      const ln = document.getElementById(`pax-ln-${idx}`)?.value.trim() || '';
+      const dob = document.getElementById(`pax-dob-${idx}`)?.value || '';
+
+      if (fn) {
+        const err = validateName(fn, 'First name');
+        setFieldError(
+          `pax-fn-field-${idx}`,
+          `pax-fn-error-${idx}`,
+          err
+        );
+        document.getElementById(`pax-fn-${idx}`)?.classList.toggle('err', Boolean(err));
+      } else {
+        setFieldError(`pax-fn-field-${idx}`, `pax-fn-error-${idx}`, '');
+      }
+
+      if (ln) {
+        const err = validateName(ln, 'Last name');
+        setFieldError(
+          `pax-ln-field-${idx}`,
+          `pax-ln-error-${idx}`,
+          err
+        );
+        document.getElementById(`pax-ln-${idx}`)?.classList.toggle('err', Boolean(err));
+      } else {
+        setFieldError(`pax-ln-field-${idx}`, `pax-ln-error-${idx}`, '');
+      }
+
+      if (dob) {
+        const age = calculateAge(dob);
+        const err = getAgeRuleMessage(pax.type, age);
+        setFieldError(
+          `pax-dob-field-${idx}`,
+          `pax-dob-error-${idx}`,
+          err
+        );
+        document.getElementById(`pax-dob-${idx}`)?.classList.toggle('err', Boolean(err));
+      } else {
+        setFieldError(`pax-dob-field-${idx}`, `pax-dob-error-${idx}`, '');
+      }
+    }
+
     updateSubtitle(idx);
   }
 
@@ -353,23 +640,35 @@
 
   function validateAll() {
     let firstInvalidIdx = -1;
+
     const passengers = paxMeta.map((pax, idx) => {
       const p = collectPassenger(idx, pax);
-      const missing = !p.firstName || !p.lastName || !p.gender || !p.dob || (pax.type === 'INF' && !p.attachTo);
+      const isValid = validatePassenger(idx, pax, true);
+
       const item = document.getElementById(`pax-item-${idx}`);
-      if (missing) {
+
+      if (!isValid) {
         item.classList.add('invalid');
-        if (firstInvalidIdx === -1) firstInvalidIdx = idx;
+        item.classList.remove('done');
+
+        if (firstInvalidIdx === -1) {
+          firstInvalidIdx = idx;
+        }
       } else {
         item.classList.remove('invalid');
         item.classList.add('done');
       }
+
       return p;
     });
 
     if (firstInvalidIdx !== -1) {
       togglePax(firstInvalidIdx, true);
-      document.getElementById(`pax-item-${firstInvalidIdx}`).scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      document
+        .getElementById(`pax-item-${firstInvalidIdx}`)
+        .scrollIntoView({ behavior: 'smooth', block: 'center' });
+
       return null;
     }
 
