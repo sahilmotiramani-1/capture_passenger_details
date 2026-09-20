@@ -310,7 +310,7 @@
             <div class="field full">
               <label>Travelling with*</label>
               <select id="pax-attach-${idx}" onchange="markDirty(${idx})">
-                <option value="">Select adult/senior passenger</option>
+                <option value="">Select accompanying adult/senior</option>
                 ${adultOptions.map(a => `<option value="${a.key}">${a.label || (TYPE_LABELS[a.type] + ' ' + (a.i + 1))}</option>`).join('')}
               </select>
             </div>` : ''}
@@ -679,10 +679,53 @@
   // mirroring the delimiter scheme the seat-selection webview uses so the
   // bot side can parse it the same way.
   function buildPayloadString(data) {
-    const paxPart = data.passengers
-      .map(p => [p.key, p.type, p.firstName, p.lastName, p.gender, p.dob, p.nationality, p.attachTo].join('|'))
+    // Real ADT/SNR/CHD passengers keep the existing compact format.
+    // Infants are intentionally NOT sent as normal passenger records because
+    // Akasa may not allocate a separate passengerKey for an infant.
+    const realPassengerPart = data.passengers
+      .filter(p => p.type !== 'INF' && !String(p.key || '').startsWith('__INFANT_'))
+      .map(p => [
+        p.key,
+        p.type,
+        p.firstName,
+        p.lastName,
+        p.gender,
+        p.dob,
+        p.nationality,
+        p.attachTo
+      ].join('|'))
       .join(';;');
-    return `passengers=${paxPart}`;
+
+    const infants = data.passengers
+      .filter(p => p.type === 'INF')
+      .map(p => ({
+        syntheticKey: p.key,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        gender: p.gender,
+        dateOfBirth: p.dob,
+        nationality: p.nationality || 'IN',
+        attachTo: p.attachTo
+      }));
+
+    let payload = `passengers=${realPassengerPart}`;
+
+    if (infants.length) {
+      // URL-safe Base64 keeps infant JSON out of the pipe/double-semicolon
+      // delimiter used for normal passenger records.
+      const json = JSON.stringify(infants);
+      const bytes = new TextEncoder().encode(json);
+      let binary = '';
+      bytes.forEach(b => binary += String.fromCharCode(b));
+      const encoded = btoa(binary)
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
+
+      payload += `;;INFANTS_B64=${encoded}`;
+    }
+
+    return payload;
   }
 
   function sendPassengerDetailsToBot(payload) {
