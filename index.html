@@ -356,12 +356,13 @@
   // ---------------------------------------------------------
 
   // Passenger age rules:
-  // ADT = 18 years or older
+  // ADT = 12 years or older and below 60
   // SNR = 60 years or older
-  // CHD = 2 years or older and below 18
+  // CHD = 2 years or older and below 12
   // INF = below 2 years
   //
   // Note: At exactly 2 years, the passenger is treated as CHD.
+  // At exactly 12 years, the passenger is treated as ADT.
   // Age is calculated as of today's date (the booking date).
   function calculateAge(dobString) {
     if (!dobString) return null;
@@ -397,8 +398,8 @@
       case 'ADT':
         return age === null
           ? 'Please enter a valid date of birth.'
-          : age < 18
-            ? 'Adult passenger must be 18 years or older.'
+          : age < 12 || age >= 60
+            ? 'Adult passenger must be 12 years or older and below 60 years.'
             : '';
       case 'SNR':
         return age === null
@@ -409,8 +410,8 @@
       case 'CHD':
         return age === null
           ? 'Please enter a valid date of birth.'
-          : (age < 2 || age >= 18)
-            ? 'Child passenger must be 2 years or older and below 18 years.'
+          : (age < 2 || age >= 12)
+            ? 'Child passenger must be 2 years or older and below 12 years.'
             : '';
       case 'INF':
         return age === null
