@@ -734,7 +734,7 @@
     // Do not pre-encode the payload separately: doing so can leave the bot
     // with a callback it cannot parse and makes the passenger card reopen.
     const message =
-      `{Capture ${payload} in capture_passenger_details_payload and execute function book_a_new_flight}`;
+      `Passengers are successfully added. {Capture ${payload} in capture_passenger_details_payload and execute function book_a_new_flight}`;
 
     const callbackUrl =
       `http://haptik-webview//perform-action?action=close` +
