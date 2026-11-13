@@ -67,11 +67,25 @@
     max-height: 0; overflow: hidden; transition: max-height 0.2s ease;
     background: #fff;
   }
-  .pax-item.expanded .pax-body { max-height: 600px; }
-  .pax-body-inner { padding: 4px 18px 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-  @media (max-width: 560px) { .pax-body-inner { grid-template-columns: 1fr; } }
+  .pax-item.expanded .pax-body { max-height: 2000px; }
+  .pax-body, .pax-body-inner { width: 100%; min-width: 0; }
+  .pax-body-inner {
+    padding: 4px 18px 20px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+  @media (max-width: 560px) {
+    .pax-body-inner { grid-template-columns: minmax(0, 1fr); }
+  }
 
-  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+    width: 100%;
+  }
   .field.full { grid-column: 1 / -1; }
   .field label { font-size: 12px; font-weight: 700; color: #555; }
   .field input, .field select {
@@ -117,6 +131,11 @@
   #loading, #error-box { text-align: center; padding: 40px 24px; color: #888; font-size: 14px; }
   #error-box { display: none; color: #333; }
   #error-box strong { color: #d94b3d; display: block; margin-bottom: 8px; font-size: 15px; }
+
+  /* Prevent embedded webview styles from causing horizontal overflow. */
+  html, body { width: 100%; max-width: 100%; overflow-x: hidden; }
+  .main { width: 100%; min-width: 0; }
+  .field.full { grid-column: 1 / -1; }
 </style>
 </head>
 <body>
